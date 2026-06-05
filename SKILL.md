@@ -2,18 +2,27 @@
 name: make-page-interactive
 version: 1.0.0
 description: >
-  Convert a static HTML page into an interactive, editable + annotatable page —
-  appends a DevRev-branded Annotate/View bar, click-to-comment,
-  double-click-to-edit-text-inline, an @-mention composer, pins, a comments
-  panel, and a "Send to Computer" flow, all baked into one self-contained HTML
-  file. Use when the user has an HTML artifact (or any static page) and wants to
-  edit it, review/comment/mark it up, hand it to teammates to annotate, or send
-  page feedback to Computer. Trigger phrases: "make this page interactive",
-  "make this page editable", "let me edit this page", "make this HTML editable",
-  "add an annotation/review layer to this HTML", "let me comment on this page",
-  "turn this page into a Figma-style editable/commentable page", "make this page
-  reviewable", "I want to leave notes on this page for Computer". This is a
-  stopgap until editing/annotation is built natively into Computer.
+  Convert a static HTML page into an interactive, editable + annotatable +
+  VERSION-CONTROLLED page — appends a DevRev-branded Annotate/View bar,
+  click-to-comment, double-click-to-edit-text-inline, an @-mention composer,
+  pins, a comments panel, a "Send to Computer" flow, AND a built-in version
+  picker (a "Versions" button in the toolbar listing every past version with
+  title/time/author, plus restore + branch), all baked into one self-contained
+  HTML file. Running the converter automatically seeds a per-page git/snapshot
+  store and bakes the full history into the output — no extra step. Use when the
+  user has an HTML artifact (or any static page) and wants to edit it,
+  review/comment/mark it up, hand it to teammates to annotate, send page
+  feedback to Computer, or keep a version history of the page across edits.
+  Trigger phrases: "make this page interactive", "make this page editable",
+  "let me edit this page", "make this HTML editable", "add an
+  annotation/review layer to this HTML", "let me comment on this page", "turn
+  this page into a Figma-style editable/commentable page", "make this page
+  reviewable", "version control this page", "add version history to this page",
+  "I want to leave notes on this page for Computer". When the user later asks to
+  change a converted page, the agent edits the source, commits via the skill's
+  version-store CLI, and regenerates so the picker stays current (see the
+  "Version control" section). This is a stopgap until editing/annotation is
+  built natively into Computer.
 ---
 
 # Make page interactive
@@ -75,6 +84,129 @@ node "<SKILL_DIR>/make-interactive.mjs" <input.html> [output.html]
 Then open the output in Computer (render it as an HTML artifact) or in any
 browser. The original page renders inside, with the annotation bar on top.
 
+## Version control (history + picker)
+
+Every converted page is backed by a per-page version store in a hidden sibling
+dir `.<page>.versions/` (real git when available, else a built-in snapshot
+store — auto-detected, no setup). `make-interactive.mjs` seeds the store on
+first run and bakes the full history into the output as a `v{n} ▾` picker
+(browse, restore, branch). The picker is offline and self-contained.
+
+### ALWAYS commit with a descriptive title before rebuilding
+
+The title and its change bullets are the only human-readable record of what each
+version was, so **they matter.** After every edit, commit with:
+
+- a short, specific **title** summarising the round as comma-separated changes;
+- one **`--bullet`** per distinct change, each a 3–6 word phrase (shown in the
+  picker's hover card).
+
+Good vs bad:
+
+- ✅ title `"Remove decimals, recolour metric, add bullets"`
+  with `--bullet "Removed % decimals" --bullet "Recoloured chat-ceiling card" --bullet "Bulletized the meta line"`
+- ❌ `"Update"`, `"Changes"`, `"Dev0 Deflection"` — vague/derived titles are useless.
+
+```
+node "<SKILL_DIR>/version-store/cli.mjs" commit <source.html> \
+  "Remove decimals, recolour metric, add bullets" \
+  --bullet "Removed % decimals" \
+  --bullet "Recoloured chat-ceiling card" \
+  --bullet "Bulletized the meta line"
+```
+
+Derive the title and bullets from **what you actually changed** this round
+(e.g. the user's annotations/feedback you applied) — not from the page's name
+or heading.
+
+**Safety net (don't rely on it):** if you edit the source and rebuild WITHOUT
+committing, `make-interactive.mjs` auto-commits so no change is ever lost, with
+a plain `"Edited (no description)"` title and no bullets. That's a fallback for
+mistakes, not the normal path. Always prefer an explicit, descriptive commit
+with bullets.
+
+### The per-round lifecycle the agent follows
+
+1. Edit the raw **source** HTML in response to the user's request.
+2. **Commit with a descriptive title** (see above). Split a round into multiple
+   commits when it spans distinct changes (see below):
+   ```
+   node "<SKILL_DIR>/version-store/cli.mjs" commit <source.html> "Tighten hero spacing"
+   ```
+3. Regenerate the interactive page (re-bakes history; auto-saves only if you
+   skipped step 2):
+   ```
+   node "<SKILL_DIR>/make-interactive.mjs" <source.html>
+   ```
+
+### Commit-splitting judgment
+
+- Small or cohesive changes in one request → **one commit**.
+- A request spanning distinct, unrelated major changes → **separate commits**
+  (e.g. "rewrite the hero" + "add a pricing section" = two commits), each with
+  its own title. Multiple commits in one round is expected and fine.
+
+### Author labels
+
+The seed commit is authored **"Computer"**; later versions use the user's
+identity (auto-configured locally from the session if git has no name set). In
+a shared repo, real git author names flow through.
+
+### Acting on picker buttons (prompts returned from the page)
+
+The picker's buttons produce copy-paste prompts. When the user pastes one back,
+recognize the **intent** (not an exact string) and run the matching command,
+then regenerate:
+
+| Pasted prompt intent | Command |
+|---|---|
+| "Restore version N (…) of PAGE as the latest version." | `node "<SKILL_DIR>/version-store/cli.mjs" restore <source.html> N` |
+| "Create a new branch \"NAME\" from version N of PAGE." | `node "<SKILL_DIR>/version-store/cli.mjs" branch <source.html> NAME N` |
+| "Switch PAGE to branch \"NAME\" and regenerate." | `node "<SKILL_DIR>/version-store/cli.mjs" switch <source.html> NAME` |
+
+Restore is a **forward** operation: it writes the old version's exact content as
+a new latest version — nothing is lost. If `N` is out of range or a branch name
+collides, ask rather than guessing. Always regenerate the page after a mutation.
+
+## Publishing a version
+
+The picker's **Publish** button (on every version) lets the user share that
+version. It opens an audience menu and produces a **short intent prompt** — the
+page can't call the API itself, so Computer runs the **bundled**
+`ui-publisher-public` skill at `make-page-interactive/publish/ui-publisher-public/`.
+
+The pasted prompt is intentionally terse, e.g. *"Publish v2 of report.html for
+anyone in the org."* or *"Publish v3 of report.html as a public 7-day link."* or
+*"Publish v2 of report.html shared with a@x.com and groups Design."* **You own the
+mechanics:** recognise the intent, map it to the `publisher.py` flags below, run
+it from the bundled path, then **record the result and regenerate** (steps below).
+Don't ask the user for the location or the flags — they're all here.
+
+Audience → `publisher.py` flags:
+
+| Choice | Flags |
+|---|---|
+| Everyone in the org | `--access internal` |
+| Just me | `--access personal` |
+| Specific people | `--access personal --share-with-emails "a@x.com,b@x.com"` |
+| Specific groups | `--access personal --share-with-groups "Design,Engineering"` (exact names) |
+| Public link (7 days) | `--access public` → returns a presigned S3 URL + `expires_at`; ignores share-with. By default ALSO run `--access internal` so org access survives expiry. |
+
+**Token:** the publisher reads `DEVREV_TOKEN`/`DEVREV_PAT`. Inside Computer the
+injected `DEVREV_API_KEY` works — export it first if needed:
+`export DEVREV_TOKEN="$DEVREV_API_KEY"`.
+
+**After publishing, record it** so the picker shows it on the next rebuild
+(the publisher prints `viewer_url`, and for public also `public_url`/`expires_at`):
+```
+node "<SKILL_DIR>/version-store/cli.mjs" record-publish <source.html> <n> \
+  --access <a> [--emails "..."] [--groups "..."] \
+  [--viewer-url <viewer_url>] [--public-url <public_url>] [--expires-at <iso>] --at <now-iso>
+```
+Then regenerate: `node "<SKILL_DIR>/make-interactive.mjs" <source.html>`. The
+picker then shows a "🔗 Published · Org/Private/Public" chip linking to the URL
+(public shows the presigned link + expiry).
+
 ## Examples
 
 **Example 1 — convert a page (default output path):**
@@ -108,6 +240,7 @@ node "<SKILL_DIR>/make-interactive.mjs" ./report.html ./report.review.html
 
 ## Known limitations (stopgap honesty)
 
+- **Single-player only.** Comments/annotations persist to the browser's local IndexedDB (`devrev-page-annotations`, keyed by chat+artifact) — device-local, never synced. They survive reloads on your machine but are invisible to teammates and to you on another device. There is intentionally no shared backend; multiplayer comment sync belongs to the native Computer feature (timeline-backed), not to a portable HTML file. (Note: the *page content* still refreshes if its file changes on disk — that's the in-app renderer's job, not this self-contained output.)
 - **Inline-edit can't write the source file** when the page is opened inside Computer's sandboxed iframe (`window.DevRevNative` is unavailable there). Edits update the in-memory page; committing offers the edited HTML as a download. Real file-write is the job of the native Computer feature this skill stands in for.
 - **Drag-to-chat** uses the Chromium `DownloadURL` DataTransfer mechanism. It lands in Chromium/Electron drop zones (Computer) but isn't guaranteed in every browser; **download is the reliable path**, drag is the bonus.
 - Output is ~2.5 MB (the annotation app + arcade CSS + embedded Chip fonts are inlined for full portability and offline use).
