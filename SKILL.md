@@ -1,6 +1,6 @@
 ---
 name: make-page-interactive
-version: 1.1.0
+version: 1.1.1
 description: >
   Convert a static HTML page into an interactive, editable + annotatable +
   VERSION-CONTROLLED page — appends a DevRev-branded Annotate/View bar,

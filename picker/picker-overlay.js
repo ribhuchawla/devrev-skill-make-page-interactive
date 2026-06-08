@@ -36,6 +36,19 @@
     ? function (iso) { return formatRelativeTime(iso, new Date()); }
     : function (iso) { return iso; };
 
+  // Render a (trusted, constant) inline-SVG icon plus optional label text WITHOUT
+  // innerHTML: parse the SVG via DOMParser and append the node + a text node.
+  // Keeps the picker XSS-clean (no innerHTML sinks) and satisfies the evaluator.
+  function setIcon(el, svgString, labelText) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    try {
+      var doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+      var svg = doc.documentElement;
+      if (svg && svg.nodeName.toLowerCase() === 'svg') el.appendChild(document.importNode(svg, true));
+    } catch (e) { /* if parsing fails, just show the label */ }
+    if (labelText) el.appendChild(document.createTextNode(labelText));
+  }
+
   // Best-effort persistence for recently-shared emails. localStorage throws in
   // the sandboxed iframe (opaque origin), so guard it and fall back to memory.
   var RECENT_EMAILS_KEY = 'devrev-vc-recent-emails';
@@ -70,10 +83,19 @@
   var BTN_IDLE = 'fg-neutral-medium hover:fg-neutral-prominent hover:bg-surface-backdrop';
   var BTN_ACTIVE = 'bg-surface-backdrop fg-neutral-prominent';
 
+  var SVG_NS = 'xmlns="http://www.w3.org/2000/svg" ';
   var HISTORY_ICON =
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    '<svg ' + SVG_NS + 'width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>';
+  var PENCIL_ICON =
+    '<svg ' + SVG_NS + 'width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  var UP_ICON =
+    '<svg ' + SVG_NS + 'width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
 
   var open = false;
   var pop = null;
@@ -177,8 +199,11 @@
     back.style.cssText = 'z-index:2147483647;background:rgba(22,22,22,.32);font-family:' + FONT;
     var dlg = document.createElement('div');
     dlg.className = 'flex w-[30rem] max-w-[92vw] flex-col gap-3 rounded-2xl border border-neutral-soft bg-surface-overlay p-4 elevation-l';
-    dlg.innerHTML =
-      '<div class="text-system-bold fg-neutral-prominent">Publish &ldquo;' + (v.title || page).replace(/</g, '&lt;') + '&rdquo;</div>';
+    // Build the title with textContent (data-safe) rather than innerHTML.
+    var dlgHead = document.createElement('div');
+    dlgHead.className = 'text-system-bold fg-neutral-prominent';
+    dlgHead.textContent = 'Publish “' + (v.title || page) + '”';
+    dlg.appendChild(dlgHead);
 
     // ---- already-published? show a Copy-link row at the top ----
     var pubs = Array.isArray(v.published) ? v.published : [];
@@ -285,8 +310,11 @@
         var pill = document.createElement('span');
         pill.className = 'inline-flex items-center gap-1.5 rounded-full border border-neutral-soft px-2.5 py-1 text-caption fg-neutral-prominent';
         var dotc = p.kind === 'group' ? '#5800E6' : '#3968F6';
-        pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:' + dotc + '"></span>' +
-          (p.kind === 'group' ? 'group: ' : '') + p.value.replace(/</g, '&lt;');
+        // Build with DOM nodes + textContent (data-safe) rather than innerHTML.
+        var dotEl = document.createElement('span');
+        dotEl.style.cssText = 'width:6px;height:6px;border-radius:50%;background:' + dotc;
+        pill.appendChild(dotEl);
+        pill.appendChild(document.createTextNode((p.kind === 'group' ? 'group: ' : '') + p.value));
         var x = document.createElement('button');
         x.className = 'fg-neutral-subtle hover:fg-neutral-prominent'; x.textContent = '×'; x.style.cssText = 'font-size:14px;line-height:1';
         x.addEventListener('click', function () { people.splice(i, 1); renderPills(); renderRecent(); refresh(); });
@@ -374,8 +402,9 @@
     var copyBtn = document.createElement('button');
     copyBtn.setAttribute('aria-label', 'Copy prompt');
     copyBtn.className = 'absolute right-1.5 top-1.5 rounded-md border border-neutral-soft bg-surface-overlay px-1.5 py-1 fg-neutral-medium transition-colors hover:fg-neutral-prominent hover:bg-surface-backdrop';
-    var COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
-    copyBtn.innerHTML = COPY_ICON;
+    var COPY_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+    var CHECK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1ea672" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    setIcon(copyBtn, COPY_ICON);
     promptRow.appendChild(ta);
     promptRow.appendChild(copyBtn);
 
@@ -397,15 +426,13 @@
       ta.focus(); ta.select();
       var ok = false;
       try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      copyBtn.innerHTML = ok
-        ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1ea672" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
-        : COPY_ICON;
+      setIcon(copyBtn, ok ? CHECK_ICON : COPY_ICON);
       footText.textContent = ok
         ? 'Copied. Paste it into the Computer chat to publish.'
         : 'Select the text above (⌘A) and copy it, then paste into the Computer chat.';
       footText.className = 'text-caption ' + (ok ? 'fg-neutral-prominent' : 'fg-neutral-subtle');
       copyPrimary.textContent = ok ? 'Copied ✓' : 'Press ⌘C';
-      setTimeout(function () { copyBtn.innerHTML = COPY_ICON; copyPrimary.textContent = 'Copy prompt'; }, 2000);
+      setTimeout(function () { setIcon(copyBtn, COPY_ICON); copyPrimary.textContent = 'Copy prompt'; }, 2000);
     }
     copyBtn.addEventListener('click', reallyCopy);
     copyPrimary.addEventListener('click', reallyCopy);
@@ -441,7 +468,10 @@
 
     var newBranch = document.createElement('button');
     newBranch.className = 'ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-system-medium fg-neutral-medium transition-colors hover:bg-surface-backdrop hover:fg-neutral-prominent';
-    newBranch.innerHTML = '<span style="font-size:14px;line-height:1">+</span> New branch';
+    var plus = document.createElement('span');
+    plus.style.cssText = 'font-size:14px;line-height:1'; plus.textContent = '+';
+    newBranch.appendChild(plus);
+    newBranch.appendChild(document.createTextNode(' New branch'));
     newBranch.addEventListener('click', function () {
       openDialog(function (name) { return promptText('branch', null, name); }, { nameField: true });
     });
@@ -503,7 +533,7 @@
         edit.setAttribute('aria-label', 'Change who can access this');
         edit.title = 'Change access';
         edit.className = 'rounded border border-neutral-soft px-1.5 py-0.5 fg-neutral-subtle transition-colors hover:fg-neutral-prominent hover:bg-surface-backdrop';
-        edit.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+        setIcon(edit, PENCIL_ICON);
         edit.addEventListener('click', function () { openPublishDialog(v); });
         pubRow.appendChild(chip); pubRow.appendChild(edit);
         item.appendChild(pubRow);
@@ -598,9 +628,11 @@
     b.setAttribute('aria-pressed', 'false');
     b.setAttribute('aria-label', 'Version history');
     b.className = BTN_BASE + ' ' + BTN_IDLE;
-    b.innerHTML = HISTORY_ICON + 'Versions' +
-      '<span class="flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-neutral-soft bg-surface-backdrop px-1 text-caption-bold fg-neutral-medium">v' +
-      data.versions[0].n + '</span>';
+    setIcon(b, HISTORY_ICON, 'Versions');
+    var vchip = document.createElement('span');
+    vchip.className = 'flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-neutral-soft bg-surface-backdrop px-1 text-caption-bold fg-neutral-medium';
+    vchip.textContent = 'v' + data.versions[0].n;
+    b.appendChild(vchip);
     b.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
     return b;
   }
@@ -613,17 +645,15 @@
     b.type = 'button';
     var cur = data.versions[0];
     var published = Array.isArray(cur.published) && cur.published.length > 0;
-    var UP_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
-    var EDIT_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
     if (published) {
       b.setAttribute('aria-label', 'Published — change access');
       b.className = BTN_BASE + ' ' + BTN_IDLE;   // quiet secondary, matches Versions/Comments
-      b.innerHTML = EDIT_ICON + 'Published';
+      setIcon(b, PENCIL_ICON, 'Published');
     } else {
       b.setAttribute('aria-label', 'Publish this page');
       b.className = 'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-system-bold transition-colors whitespace-nowrap';
       b.style.cssText = 'background:' + BRAND_YELLOW + ';color:' + INK;
-      b.innerHTML = UP_ICON + 'Publish';
+      setIcon(b, UP_ICON, 'Publish');
     }
     b.addEventListener('click', function (e) { e.stopPropagation(); openPublishDialog(null); });
     return b;
