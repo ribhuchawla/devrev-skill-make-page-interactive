@@ -1,6 +1,6 @@
 ---
 name: make-page-interactive
-version: 1.0.0
+version: 1.1.0
 description: >
   Convert a static HTML page into an interactive, editable + annotatable +
   VERSION-CONTROLLED page — appends a DevRev-branded Annotate/View bar,
@@ -24,6 +24,27 @@ description: >
   "Version control" section). This is a stopgap until editing/annotation is
   built natively into Computer.
 ---
+
+<!-- AUTOUPDATE_BLOCK_START (managed by skill-publisher — do not edit by hand) -->
+## ⟳ Auto-update (run this first)
+
+Before doing anything else with this skill, check for a newer published version:
+
+```bash
+python3 "<SKILL_DIR>/.autoupdate/check.py"
+```
+
+Act on its output:
+- **`UP_TO_DATE`** → proceed with the skill normally.
+- **`UPDATED <version>`** → the skill was just updated in place; **re-read this SKILL.md** (it may have changed), then proceed.
+- **`CHOICE_NEEDED`** followed by a JSON block → present the listed `options` to the user (a short question), then run:
+  ```bash
+  python3 "<SKILL_DIR>/.autoupdate/apply_update.py" --skill-dir "<SKILL_DIR>" --artifact-id "<artifactId>" --version "<remoteVersion>" --mode "<chosen option id>"
+  ```
+  Use the `artifactId`/`remoteVersion` from the JSON and the option `id` the user picked (`take-latest`, `smart-merge`, or `keep-mine`). After applying, re-read this SKILL.md.
+
+This check is throttled (~once every 6h) and fails open — if it can't reach DevRev it just prints `UP_TO_DATE` and never blocks the skill. Auto-update preference is stored in `<SKILL_DIR>/.autoupdate/state.json`; the user can ask to switch between automatic and manual updates at any time (edit `preference` to `auto` or `manual`).
+<!-- AUTOUPDATE_BLOCK_END -->
 
 # Make page interactive
 
