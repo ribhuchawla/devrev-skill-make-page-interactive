@@ -826,46 +826,41 @@
     ta.addEventListener('focus', pad, true);
     ta.addEventListener('select', pad, true);
 
-    // --- Restructure to a one-click Copy flow (consistent with the Publish dialog).
-    // Rewrite the instruction line, turn the footer into [Copy prompt] [I sent it],
-    // gate "I sent it" until the prompt is copied, and drop the Cancel button
-    // (the top-right ✕ handles close).
+    // --- ONE primary button that morphs: "Copy prompt" → (after copy) "I sent it".
+    // The yellow primary button natively is "I sent it" (its React onClick marks
+    // the notes sent). We relabel it to "Copy prompt" and intercept the FIRST
+    // click (capture phase) to copy + relabel to "I sent it"; from then on clicks
+    // pass through to the original React handler. The ghost Cancel button is
+    // hidden (the top-right ✕ closes the dialog).
     var buttons = dialog.querySelectorAll('button');
-    var copyBtn = null, sentBtn = null;
+    var ghostBtn = null, primaryBtn = null;
     for (var i = 0; i < buttons.length; i++) {
       var label = (buttons[i].textContent || '').trim();
       if (buttons[i].getAttribute('aria-label') === 'Close') continue;  // the ✕
-      if (label === 'Cancel') copyBtn = buttons[i];        // repurpose Cancel → Copy prompt
-      else if (label === 'I sent it') sentBtn = buttons[i];
+      if (label === 'Cancel') ghostBtn = buttons[i];
+      else if (label === 'I sent it') primaryBtn = buttons[i];
     }
 
-    // Rewrite the "Press ⌘C…" instruction.
     var p = dialog.querySelector('p');
-    if (p) p.textContent = 'Copy the prompt, paste it into the Computer chat, then mark it sent. It carries your comments and edits for Computer to act on.';
+    if (p) p.textContent = 'Copy the prompt and paste it into the Computer chat — it carries your comments and edits for Computer to act on. Then mark it sent.';
 
-    if (copyBtn && sentBtn) {
-      // Gate "I sent it" until a copy happens.
-      sentBtn.disabled = true;
-      sentBtn.style.opacity = '0.5';
-      sentBtn.style.pointerEvents = 'none';
+    if (ghostBtn) ghostBtn.style.display = 'none';   // single button only
 
-      // Repurpose the (ghost) Cancel button into a primary "Copy prompt" button.
-      copyBtn.textContent = 'Copy prompt';
-      // Capture-phase handler so the button's original React onClick (cancel/close)
-      // never fires — this click only copies.
-      copyBtn.addEventListener('click', function (e) {
+    if (primaryBtn) {
+      var copied = false;
+      primaryBtn.textContent = 'Copy prompt';
+      primaryBtn.addEventListener('click', function (e) {
+        if (copied) return;   // already copied → let React's "mark sent" handler run
+        // First click = copy. Block the native mark-sent handler this once.
         e.preventDefault(); e.stopPropagation();
         if (e.stopImmediatePropagation) e.stopImmediatePropagation();
         pad();
         ta.focus(); ta.select();
         var ok = false;
         try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
-        copyBtn.textContent = ok ? 'Copied ✓' : 'Press ⌘C';
-        // Enable "I sent it" once they've copied.
-        sentBtn.disabled = false;
-        sentBtn.style.opacity = '';
-        sentBtn.style.pointerEvents = '';
-        if (ok) setTimeout(function () { copyBtn.textContent = 'Copy prompt'; }, 1800);
+        if (!ok) { primaryBtn.textContent = 'Press ⌘C to copy'; return; }
+        copied = true;
+        primaryBtn.textContent = 'I sent it';
       }, true);
     }
   }
