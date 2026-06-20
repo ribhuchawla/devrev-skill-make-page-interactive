@@ -795,9 +795,46 @@
       })(btns[i]);
     }
   }
+  // ---- Force "Send to Computer" pastes to land as an ATTACHMENT, not plain text -
+  // Computer's composer turns a paste into a file attachment when it's >= 3000
+  // chars OR >= 100 lines (verified in devrev-web's ConvertLargeTextToFile). A
+  // short feedback payload pastes as ugly inline plain text. So when the
+  // "Share with Computer" dialog opens, if its copy-text is under the line
+  // threshold, pad it with blank newlines + a trailing dot so it always exceeds
+  // 100 lines → always pastes as a clean attachment.
+  var PASTE_LINE_THRESHOLD = 100;   // matches DEFAULT_PASTE_LINE_THRESHOLD
+  var PAD_TO_LINES = 110;           // comfortably past the threshold
+  function padShareDialog(dialog) {
+    if (!dialog || dialog.__devrevPadded) return;
+    var ta = dialog.querySelector('textarea');
+    if (!ta) return;
+    dialog.__devrevPadded = true;
+
+    function pad() {
+      var val = ta.value;
+      // strip any prior padding we added (idempotent) before measuring
+      val = val.replace(/\n+\.\s*$/, '');
+      var lines = val.split('\n').length;
+      if (lines >= PASTE_LINE_THRESHOLD) { ta.value = val; return; }
+      // Append blank newlines to clear the line threshold, then a trailing dot
+      // so the block isn't whitespace-only (some pasters trim trailing blanks).
+      var pad = new Array(PAD_TO_LINES - lines + 1).join('\n');
+      ta.value = val + pad + '.';
+    }
+    pad();
+    // React may re-render the value; re-pad on focus/select (the user copies via ⌘C).
+    ta.addEventListener('focus', pad, true);
+    ta.addEventListener('select', pad, true);
+    // re-select so the padded content is what ⌘C copies
+    try { ta.focus(); ta.select(); } catch (e) { /* ignore */ }
+  }
+
   var composerObserver = new MutationObserver(function () {
     var c = findComposer();
     if (c) wireComposer(c);
+    // The Send/Share dialog is a separate portal node.
+    var share = document.querySelector('[aria-label="Share with Computer"]');
+    if (share) padShareDialog(share);
   });
   composerObserver.observe(document.body, { childList: true, subtree: true });
 
